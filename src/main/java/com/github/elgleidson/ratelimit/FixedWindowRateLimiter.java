@@ -33,17 +33,14 @@ public class FixedWindowRateLimiter implements RateLimiter {
 
       if (existing == null) {
         // First request ever
-        return new Hits(currentTimeWindow, 1);
+        existing = new Hits(currentTimeWindow, 0);
       } else if (existing.timeWindow < currentTimeWindow) {
         // New time window → reset
         existing.timeWindow = currentTimeWindow;
-        existing.requests = 1;
-        return existing;
-      } else {
-        // Still in same window → increment
-        existing.requests++;
-        return existing;
+        existing.requests = 0;
       }
+      existing.requests++;
+      return existing;
     });
     return hits.requests <= limitPerWindow;
   }
