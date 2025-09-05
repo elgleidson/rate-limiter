@@ -15,7 +15,7 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
 @Nested
-class SlidingWindowRateLimiterTest {
+class SlidingWindowLogRateLimiterTest {
 
   private RateLimiter rateLimiter;
   private AtomicLong fakeTime;
@@ -32,7 +32,7 @@ class SlidingWindowRateLimiterTest {
 
   @Test
   void withinWindow_limitRespected() {
-    rateLimiter = new FixedWindowRateLimiter(60_000, 3, fakeTime::get);
+    rateLimiter = new SlidingWindowLogRateLimiter(60_000, 3, fakeTime::get);
 
     // 3 requests in the same time window -> allowed
     Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
@@ -44,7 +44,7 @@ class SlidingWindowRateLimiterTest {
 
   @Test
   void requestsExpireAfterWindow() {
-    rateLimiter = new FixedWindowRateLimiter(60_000, 3, fakeTime::get);
+    rateLimiter = new SlidingWindowLogRateLimiter(60_000, 3, fakeTime::get);
 
     // 3 requests in the same time window -> allowed
     assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
@@ -64,7 +64,7 @@ class SlidingWindowRateLimiterTest {
 
   @Test
   void separateIdentifiersAreIndependent() {
-    rateLimiter = new FixedWindowRateLimiter(60_000, 3, fakeTime::get);
+    rateLimiter = new SlidingWindowLogRateLimiter(60_000, 3, fakeTime::get);
 
     // 3 requests in the same time window -> allowed
     Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
@@ -79,7 +79,7 @@ class SlidingWindowRateLimiterTest {
   void concurrentAccess_multipleIps_shouldRespectLimitPerWindow() throws InterruptedException {
     // Multiple threads issue requests to different identifiers (IP/client-id).
     // Ensures each identifier respects its own limit.
-    rateLimiter = new FixedWindowRateLimiter(100, 10, fakeTime::get);
+    rateLimiter = new SlidingWindowLogRateLimiter(100, 10, fakeTime::get);
 
     int threadCount = 50;
     int requestsPerThread = 20;
@@ -118,7 +118,7 @@ class SlidingWindowRateLimiterTest {
   void highContention_sameIp_shouldNotExceedLimit() throws InterruptedException {
     // Multiple threads hammer the same identifier (IP/client-id).
     // Ensures that even under high contention, the limit is never exceeded.
-    rateLimiter = new FixedWindowRateLimiter(100, 10, fakeTime::get);
+    rateLimiter = new SlidingWindowLogRateLimiter(100, 10, fakeTime::get);
 
     int threadCount = 50;
     int requestsPerThread = 20;

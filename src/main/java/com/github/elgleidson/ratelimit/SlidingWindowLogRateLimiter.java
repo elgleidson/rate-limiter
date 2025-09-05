@@ -56,7 +56,7 @@ public class SlidingWindowLogRateLimiter implements RateLimiter {
     private int tail = 0;
     private int size = 0;
 
-    Hits(int capacity) {
+    private Hits(int capacity) {
       this.timestamps = new long[capacity];
     }
 
