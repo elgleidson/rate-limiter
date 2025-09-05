@@ -64,7 +64,7 @@ public class SlidingWindowLogRateLimiter implements RateLimiter {
       return size == 0;
     }
 
-    void add(long timestamp) {
+    private void add(long timestamp) {
       timestamps[tail] = timestamp;
       tail = (tail + 1) % timestamps.length;
       size++;
