@@ -1,4 +1,4 @@
-package com.github.elgleidson.ratelimit;
+package com.github.elgleidson.dsa.ratelimit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -13,7 +13,7 @@ import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-class FixedWindowRateLimiterTest {
+class SlidingWindowCounterRateLimiterTest {
 
   private RateLimiter rateLimiter;
   private AtomicLong fakeTime;
@@ -30,7 +30,7 @@ class FixedWindowRateLimiterTest {
 
   @Test
   void withinWindow_limitRespected() {
-    rateLimiter = new FixedWindowRateLimiter(60_000, 3, fakeTime::get);
+    rateLimiter = new SlidingWindowCounterRateLimiter(60_000, 3, fakeTime::get);
 
     // 3 requests in the same time window -> allowed
     Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
@@ -42,7 +42,7 @@ class FixedWindowRateLimiterTest {
 
   @Test
   void requestsExpireAfterWindow() {
-    rateLimiter = new FixedWindowRateLimiter(60_000, 3, fakeTime::get);
+    rateLimiter = new SlidingWindowCounterRateLimiter(60_000, 3, fakeTime::get);
 
     // 3 requests in the same time window -> allowed
     Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
@@ -53,13 +53,30 @@ class FixedWindowRateLimiterTest {
     advanceTime(59_999); // still in the same time window
     Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isFalse();
 
-    advanceTime(1); // new time window
+    advanceTime(30_000); // new time window
+    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
+  }
+
+  @Test
+  void requestsExpireAfter2Windows() {
+    rateLimiter = new SlidingWindowCounterRateLimiter(60_000, 3, fakeTime::get);
+
+    // 3 requests in the same time window -> allowed
+    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
+    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
+    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
+    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isFalse();
+
+    advanceTime(59_999); // still in the same time window
+    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isFalse();
+
+    advanceTime(60_001); // 2 time windows
     Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
   }
 
   @Test
   void separateIdentifiersAreIndependent() {
-    rateLimiter = new FixedWindowRateLimiter(60_000, 3, fakeTime::get);
+    rateLimiter = new SlidingWindowCounterRateLimiter(60_000, 3, fakeTime::get);
 
     // 3 requests in the same time window -> allowed
     Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
@@ -74,7 +91,7 @@ class FixedWindowRateLimiterTest {
   void concurrentAccess_multipleIps_shouldRespectLimitPerWindow() throws InterruptedException {
     // Multiple threads issue requests to different identifiers (IP/client-id).
     // Ensures each identifier respects its own limit.
-    rateLimiter = new FixedWindowRateLimiter(100, 10, fakeTime::get);
+    rateLimiter = new SlidingWindowCounterRateLimiter(100, 10, fakeTime::get);
 
     int threadCount = 50;
     int requestsPerThread = 20;
@@ -113,7 +130,7 @@ class FixedWindowRateLimiterTest {
   void highContention_sameIp_shouldNotExceedLimit() throws InterruptedException {
     // Multiple threads hammer the same identifier (IP/client-id).
     // Ensures that even under high contention, the limit is never exceeded.
-    rateLimiter = new FixedWindowRateLimiter(100, 10, fakeTime::get);
+    rateLimiter = new SlidingWindowCounterRateLimiter(100, 10, fakeTime::get);
 
     int threadCount = 50;
     int requestsPerThread = 20;
@@ -141,4 +158,5 @@ class FixedWindowRateLimiterTest {
 
     assertThat(allowedCount).as("Limit was exceeded under contention!").hasValueLessThanOrEqualTo(10);
   }
+
 }

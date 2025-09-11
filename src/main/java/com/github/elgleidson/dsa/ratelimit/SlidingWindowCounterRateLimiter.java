@@ -1,21 +1,21 @@
-package com.github.elgleidson.ratelimit;
+package com.github.elgleidson.dsa.ratelimit;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
 
-public class FixedWindowRateLimiter implements RateLimiter {
+public class SlidingWindowCounterRateLimiter implements RateLimiter {
 
   private final long windowSizeInMs;
   private final int limitPerWindow;
   private final Map<String, Hits> requests;
   private final LongSupplier currentTimeInMsSupplier;
 
-  public FixedWindowRateLimiter(long windowSizeInMs, int limitPerWindow) {
+  public SlidingWindowCounterRateLimiter(long windowSizeInMs, int limitPerWindow) {
     this(windowSizeInMs, limitPerWindow, System::currentTimeMillis);
   }
 
-  FixedWindowRateLimiter(long windowSizeInMs, int limitPerWindow, LongSupplier currentTimeInMsSupplier) {
+  SlidingWindowCounterRateLimiter(long windowSizeInMs, int limitPerWindow,LongSupplier currentTimeInMsSupplier) {
     this.windowSizeInMs = windowSizeInMs;
     this.limitPerWindow = limitPerWindow;
     this.requests = new ConcurrentHashMap<>();
@@ -24,29 +24,62 @@ public class FixedWindowRateLimiter implements RateLimiter {
 
   @Override
   public boolean isAllowed(String identifier) {
-    var currentTimeWindow = timeWindow();
-    var hits = requests.compute(identifier, (key, existing) -> {
+    var now = currentTimeInMsSupplier.getAsLong();
+    var currentTimeWindow = timeWindow(now);
+    // to scape the lambda scope inside compute()
+    // this variable is per thread local, so it's thread safe
+    // can't be added to Hits as it would make no thread-safe: A and B for the same identifier
+    // A enters compute(), change Hits.allowed = true
+    // B waits
+    // A leaves computer()
+    // B enters compute(), change Hits.allowed = false before A reads it, so A reads as false, instead of true.
+    final boolean[] allowed = new boolean[1];
+    requests.compute(identifier, (key, existing) -> {
       // Hits is mutable on purpose to avoid object allocation / CG every time.
       // So we only create Hits once, and then we keep updating it accordingly.
       // It doesn't stress the CG, so it's more performant.
       // No issue as compute() is atomic / thread-safe per key.
+      // It could be simplified moving the calculations to the end (with some tweaks inside the ifs)
+      // But that would mean floating point math would run in every single request, increasing CPU cost.
+      // So let's keep it inside the ifs so these operations are done only when they are needed (same or next time window)
 
       if (existing == null) {
         // First request ever
-        existing = new Hits(currentTimeWindow, 0);
-      } else if (existing.timeWindow < currentTimeWindow) {
-        // New time window → reset
+        existing = new Hits(currentTimeWindow, 0, 1);
+        allowed[0] = true;
+      } else if (existing.timeWindow == currentTimeWindow) {
+        // Same time window
+        var overlap = overlap(now, currentTimeWindow);
+        var projected = (existing.previousRequests * overlap) + existing.currentRequests + 1;
+        allowed[0] = projected <= limitPerWindow;
+        if (allowed[0]) {
+          existing.currentRequests++;
+        }
+      } else if (existing.timeWindow + 1 == currentTimeWindow) {
+        // One time window shift
         existing.timeWindow = currentTimeWindow;
-        existing.requests = 0;
+        existing.previousRequests = existing.currentRequests;
+        var overlap = overlap(now, currentTimeWindow);
+        var projected = (existing.previousRequests * overlap) + 1;
+        allowed[0] = projected <= limitPerWindow;
+        existing.currentRequests = allowed[0] ? 1 : 0;
+      } else {
+        // More than one time window shift -> reset everything
+        existing.timeWindow = currentTimeWindow;
+        existing.previousRequests = 0;
+        existing.currentRequests = 0;
+        allowed[0] = true;
       }
-      existing.requests++;
       return existing;
     });
-    return hits.requests <= limitPerWindow;
+    return allowed[0];
   }
 
-  private int timeWindow() {
-    var now = currentTimeInMsSupplier.getAsLong();
+  private double overlap(long now, long currentWindow) {
+    return 1.0 - ((double) (now - (currentWindow * windowSizeInMs))) / windowSizeInMs;
+  }
+
+  private int timeWindow(long now) {
     // Calculate the "current window number" based on the timestamp.
     // windowSizeInMs defines the length of a single window (e.g., 60_000 ms = 1 minute)
     //
@@ -83,11 +116,13 @@ public class FixedWindowRateLimiter implements RateLimiter {
   private static class Hits {
 
     private int timeWindow;
-    private int requests;
+    private int previousRequests;
+    private int currentRequests;
 
-    private Hits(int timeWindow, int requests) {
+    public Hits(int timeWindow, int previousRequests, int currentRequests) {
       this.timeWindow = timeWindow;
-      this.requests = requests;
+      this.previousRequests = previousRequests;
+      this.currentRequests = currentRequests;
     }
   }
 }

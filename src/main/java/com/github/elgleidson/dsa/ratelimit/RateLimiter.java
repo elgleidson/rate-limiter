@@ -1,4 +1,4 @@
-package com.github.elgleidson.ratelimit;
+package com.github.elgleidson.dsa.ratelimit;
 
 public interface RateLimiter {
 

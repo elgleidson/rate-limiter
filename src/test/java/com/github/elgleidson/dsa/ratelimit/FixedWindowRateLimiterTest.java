@@ -1,4 +1,4 @@
-package com.github.elgleidson.ratelimit;
+package com.github.elgleidson.dsa.ratelimit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -13,7 +13,7 @@ import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-class SlidingWindowLogRateLimiterTest {
+class FixedWindowRateLimiterTest {
 
   private RateLimiter rateLimiter;
   private AtomicLong fakeTime;
@@ -30,7 +30,7 @@ class SlidingWindowLogRateLimiterTest {
 
   @Test
   void withinWindow_limitRespected() {
-    rateLimiter = new SlidingWindowLogRateLimiter(60_000, 3, fakeTime::get);
+    rateLimiter = new FixedWindowRateLimiter(60_000, 3, fakeTime::get);
 
     // 3 requests in the same time window -> allowed
     Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
@@ -42,27 +42,24 @@ class SlidingWindowLogRateLimiterTest {
 
   @Test
   void requestsExpireAfterWindow() {
-    rateLimiter = new SlidingWindowLogRateLimiter(60_000, 3, fakeTime::get);
+    rateLimiter = new FixedWindowRateLimiter(60_000, 3, fakeTime::get);
 
     // 3 requests in the same time window -> allowed
-    assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
-    advanceTime(1);
-    assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
-    advanceTime(1);
-    assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
-    advanceTime(1);
-    assertThat(rateLimiter.isAllowed("1.1.1.1")).isFalse();
+    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
+    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
+    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
+    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isFalse();
 
-    advanceTime(59_996); // still within the time windows → no requests expired
-    assertThat(rateLimiter.isAllowed("1.1.1.1")).isFalse();
+    advanceTime(59_999); // still in the same time window
+    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isFalse();
 
-    advanceTime(1); // past 60s → first requests expired
-    assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
+    advanceTime(1); // new time window
+    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
   }
 
   @Test
   void separateIdentifiersAreIndependent() {
-    rateLimiter = new SlidingWindowLogRateLimiter(60_000, 3, fakeTime::get);
+    rateLimiter = new FixedWindowRateLimiter(60_000, 3, fakeTime::get);
 
     // 3 requests in the same time window -> allowed
     Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
@@ -77,7 +74,7 @@ class SlidingWindowLogRateLimiterTest {
   void concurrentAccess_multipleIps_shouldRespectLimitPerWindow() throws InterruptedException {
     // Multiple threads issue requests to different identifiers (IP/client-id).
     // Ensures each identifier respects its own limit.
-    rateLimiter = new SlidingWindowLogRateLimiter(100, 10, fakeTime::get);
+    rateLimiter = new FixedWindowRateLimiter(100, 10, fakeTime::get);
 
     int threadCount = 50;
     int requestsPerThread = 20;
@@ -116,7 +113,7 @@ class SlidingWindowLogRateLimiterTest {
   void highContention_sameIp_shouldNotExceedLimit() throws InterruptedException {
     // Multiple threads hammer the same identifier (IP/client-id).
     // Ensures that even under high contention, the limit is never exceeded.
-    rateLimiter = new SlidingWindowLogRateLimiter(100, 10, fakeTime::get);
+    rateLimiter = new FixedWindowRateLimiter(100, 10, fakeTime::get);
 
     int threadCount = 50;
     int requestsPerThread = 20;
