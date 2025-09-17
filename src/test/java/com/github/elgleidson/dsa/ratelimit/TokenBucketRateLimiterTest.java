@@ -48,6 +48,7 @@ class TokenBucketRateLimiterTest {
     Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue(); // tokens 3 -> 2
     Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue(); // tokens 2 -> 1
     Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue(); // tokens 1 -> 0
+
     Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isFalse(); // tokens 0
 
     advanceTime(20_000); // 1/3 of the time has passed, so 1 new token is refilled

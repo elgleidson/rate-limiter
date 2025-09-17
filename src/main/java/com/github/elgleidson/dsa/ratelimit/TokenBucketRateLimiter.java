@@ -52,7 +52,7 @@ public class TokenBucketRateLimiter implements RateLimiter {
   private static class Hits {
 
     private long lastRefillTimestamp;
-    private long tokens;
+    private int tokens;
     private double remainder;
 
     Hits(long lastRefillTimestamp, int tokens) {
@@ -68,7 +68,7 @@ public class TokenBucketRateLimiter implements RateLimiter {
       int wholeTokens = (int) newTokens;
       if (wholeTokens > 0) {
         tokens = Math.min(limitPerWindow, tokens + wholeTokens);
-        remainder = newTokens % wholeTokens;
+        remainder = wholeTokens - newTokens;
       } else {
         remainder = newTokens;
       }
