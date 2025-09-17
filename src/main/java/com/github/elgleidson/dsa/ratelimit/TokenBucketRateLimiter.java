@@ -41,22 +41,9 @@ public class TokenBucketRateLimiter implements RateLimiter {
       if (existing == null) {
         existing = new Hits(now, limitPerWindow);
       } else {
-        // refill
-        long elapsedTimeInMs = now - existing.lastRefillTimestamp;
-        existing.lastRefillTimestamp = now;
-        double newTokens = existing.remainder + (elapsedTimeInMs * refillRatePerMs);
-        int wholeTokens = (int) newTokens;
-        if (wholeTokens > 0) {
-          existing.tokens = Math.min(limitPerWindow, existing.tokens + wholeTokens);
-          existing.remainder = newTokens % wholeTokens;
-        } else {
-          existing.remainder = newTokens;
-        }
+        existing.refill(now, limitPerWindow, refillRatePerMs);
       }
-      allowed[0] = existing.tokens >= 1;
-      if (allowed[0]) {
-        existing.tokens--;
-      }
+      allowed[0] = existing.tryConsume();
       return existing;
     });
     return allowed[0];
@@ -72,6 +59,27 @@ public class TokenBucketRateLimiter implements RateLimiter {
       this.lastRefillTimestamp = lastRefillTimestamp;
       this.tokens = tokens;
       this.remainder = 0;
+    }
+
+    void refill(long now, int limitPerWindow, double refillRatePerMs) {
+      long elapsedTimeInMs = now - lastRefillTimestamp;
+      lastRefillTimestamp = now;
+      double newTokens = remainder + (elapsedTimeInMs * refillRatePerMs);
+      int wholeTokens = (int) newTokens;
+      if (wholeTokens > 0) {
+        tokens = Math.min(limitPerWindow, tokens + wholeTokens);
+        remainder = newTokens % wholeTokens;
+      } else {
+        remainder = newTokens;
+      }
+    }
+
+    boolean tryConsume() {
+      if (tokens > 0) {
+        tokens--;
+        return true;
+      }
+      return false;
     }
   }
 }
