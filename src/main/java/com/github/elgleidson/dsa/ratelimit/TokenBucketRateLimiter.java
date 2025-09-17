@@ -55,7 +55,7 @@ public class TokenBucketRateLimiter implements RateLimiter {
     private long tokens;
     private double remainder;
 
-    public Hits(long lastRefillTimestamp, int tokens) {
+    Hits(long lastRefillTimestamp, int tokens) {
       this.lastRefillTimestamp = lastRefillTimestamp;
       this.tokens = tokens;
       this.remainder = 0;

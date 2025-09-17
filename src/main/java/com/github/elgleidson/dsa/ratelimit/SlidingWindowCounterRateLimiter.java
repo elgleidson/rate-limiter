@@ -119,7 +119,7 @@ public class SlidingWindowCounterRateLimiter implements RateLimiter {
     private int previousRequests;
     private int currentRequests;
 
-    public Hits(int timeWindow, int previousRequests, int currentRequests) {
+    Hits(int timeWindow, int previousRequests, int currentRequests) {
       this.timeWindow = timeWindow;
       this.previousRequests = previousRequests;
       this.currentRequests = currentRequests;

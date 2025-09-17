@@ -75,7 +75,7 @@ public class FastTokenBucketRateLimiter implements RateLimiter {
     private long lastRefillTimestamp;
     private long tokens;
 
-    public Hits(long lastRefillTimestamp, long tokens) {
+    Hits(long lastRefillTimestamp, long tokens) {
       this.lastRefillTimestamp = lastRefillTimestamp;
       this.tokens = tokens;
     }

@@ -85,7 +85,7 @@ public class FixedWindowRateLimiter implements RateLimiter {
     private int timeWindow;
     private int requests;
 
-    private Hits(int timeWindow, int requests) {
+    Hits(int timeWindow, int requests) {
       this.timeWindow = timeWindow;
       this.requests = requests;
     }
