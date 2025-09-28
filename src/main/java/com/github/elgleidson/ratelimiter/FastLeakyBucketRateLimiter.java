@@ -1,23 +1,44 @@
-package com.github.elgleidson.dsa.ratelimit;
+package com.github.elgleidson.ratelimiter;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
 
-public class LeakyBucketRateLimiter implements RateLimiter {
+public class FastLeakyBucketRateLimiter implements RateLimiter {
 
-  private final int limitPerWindow;
-  private final double leakRatePerMs;
+  // 100 requests / min => 100 / 60_000 ms
+  // Using floating points that will give us:
+  // - limitPerWindow = 100
+  // - leakRatePerMs = 0.00166667 requests / ms
+  //
+  // After 100ms that gives us 0.166667 request.
+  // After 600ms that gives us 1 whole request.
+  //
+  // Using long scale to avoid floating point arithmetic that will give us:
+  // - limitPerWindow = 100_000_000 micro-requests
+  // - leakRatePerMs = 1666 micro-requests / ms, same as the first 6 decimal places of our floating point impl = 0.001666 * scale
+  //
+  // After 100ms that gives us 166_600 micro-requests
+  // After 600ms that gives us 999_600 micro-requests (a little less than 1 whole token)
+  // After 601ms that gives us 1_001_266 micro-requests (a little more than 1 whole token)
+  //
+  // It's a trade-off:
+  // - Floating point is more precise, but more costly, and we can have rounding issues.
+  // - Long scale is faster, no rounding issues, but it's not as precise. Increasing scale could lead to math overflow.
+  private static final int SCALE = 1_000_000;
+
+  private final long limitPerWindow;
+  private final long leakRatePerMs;
   private final Map<String, Hits> requests;
   private final LongSupplier currentTimeInMsSupplier;
 
-  public LeakyBucketRateLimiter(long windowSizeInMs, int limitPerWindow) {
+  public FastLeakyBucketRateLimiter(long windowSizeInMs, int limitPerWindow) {
     this(windowSizeInMs, limitPerWindow, System::currentTimeMillis);
   }
 
-  LeakyBucketRateLimiter(long windowSizeInMs, int limitPerWindow, LongSupplier currentTimeInMsSupplier) {
-    this.limitPerWindow = limitPerWindow;
-    this.leakRatePerMs = (double) limitPerWindow / windowSizeInMs;
+  FastLeakyBucketRateLimiter(long windowSizeInMs, int limitPerWindow, LongSupplier currentTimeInMsSupplier) {
+    this.limitPerWindow = limitPerWindow * SCALE;
+    this.leakRatePerMs = this.limitPerWindow / windowSizeInMs;
     this.requests = new ConcurrentHashMap<>();
     this.currentTimeInMsSupplier = currentTimeInMsSupplier;
   }
@@ -52,31 +73,23 @@ public class LeakyBucketRateLimiter implements RateLimiter {
   private static class Hits {
 
     private long lastLeakTimestamp;
-    private int requests;
-    private double remainder;
+    private long requests;
 
     public Hits(long lastLeakTimestamp, int requests) {
       this.lastLeakTimestamp = lastLeakTimestamp;
       this.requests = requests;
-      this.remainder = 0;
     }
 
-    void leak(long now, double leakRatePerMs) {
+    void leak(long now, long leakRatePerMs) {
       long elapsedTimeInMs = now - lastLeakTimestamp;
       lastLeakTimestamp = now;
-      double leaked = remainder + (elapsedTimeInMs * leakRatePerMs);
-      int wholeRequests = (int) leaked;
-      if (wholeRequests > 0) {
-        requests = Math.max(0, requests - wholeRequests);
-        remainder = leaked - wholeRequests;
-      } else {
-        remainder = leaked;
-      }
+      long leaked = elapsedTimeInMs * leakRatePerMs;
+      requests = Math.max(0, requests - leaked);
     }
 
-    boolean tryAdd(int limitPerWindow) {
-      if (requests < limitPerWindow) {
-        requests++;
+    boolean tryAdd(long limitPerWindow) {
+      if (limitPerWindow - requests >= SCALE) {
+        requests += SCALE;
         return true;
       }
       return false;

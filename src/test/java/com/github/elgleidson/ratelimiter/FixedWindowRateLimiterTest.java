@@ -1,4 +1,4 @@
-package com.github.elgleidson.dsa.ratelimit;
+package com.github.elgleidson.ratelimiter;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -13,7 +13,7 @@ import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
-class FastLeakyBucketRateLimiterTest {
+class FixedWindowRateLimiterTest {
 
   private RateLimiter rateLimiter;
   private AtomicLong fakeTime;
@@ -29,8 +29,8 @@ class FastLeakyBucketRateLimiterTest {
   }
 
   @Test
-  void limitRespected() {
-    rateLimiter = new FastLeakyBucketRateLimiter(60_000, 3, fakeTime::get);
+  void withinWindow_limitRespected() {
+    rateLimiter = new FixedWindowRateLimiter(60_000, 3, fakeTime::get);
 
     // 3 requests in the same time window -> allowed
     Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
@@ -41,44 +41,25 @@ class FastLeakyBucketRateLimiterTest {
   }
 
   @Test
-  void leak() {
-    rateLimiter = new FastLeakyBucketRateLimiter(60_000, 3, fakeTime::get);
+  void requestsExpireAfterWindow() {
+    rateLimiter = new FixedWindowRateLimiter(60_000, 3, fakeTime::get);
 
     // 3 requests in the same time window -> allowed
-    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue(); // requests -> 1
-    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue(); // requests -> 2
-    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue(); // requests -> 3
+    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
+    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
+    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
     Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isFalse();
 
-    advanceTime(20_000); // 1/3 of the time has passed, so 1 new request is allowed
-    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue(); // requests 3 -> 2 -> 3
+    advanceTime(59_999); // still in the same time window
     Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isFalse();
 
-    advanceTime(40_000); // 2/3 of the time has passed, another 2 requests are allowed
-    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue(); // requests 3 -> 1 -> 2
-    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue(); // requests 2 -> 3
-    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isFalse();
-  }
-
-  @Test
-  void leak_fractionalLeftover() {
-    rateLimiter = new FastLeakyBucketRateLimiter(60_000, 3, fakeTime::get);
-
-    // 3 requests in the same time window -> allowed
-    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue(); // requests -> 1
-    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue(); // requests -> 2
-    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue(); // requests -> 3
-    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isFalse();
-
-    advanceTime(10_000); // 1/6 of the time has passed, so "0.5" request is allowed
-    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isFalse(); // requests 3 -> "2.5"
-    advanceTime(10_000); // 1/6 of the time has passed, so another "0.5" request is allowed, completing 1 whole request
-    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue(); // token "2.5" -> 2 -> 3
+    advanceTime(1); // new time window
+    Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
   }
 
   @Test
   void separateIdentifiersAreIndependent() {
-    rateLimiter = new FastLeakyBucketRateLimiter(60_000, 3, fakeTime::get);
+    rateLimiter = new FixedWindowRateLimiter(60_000, 3, fakeTime::get);
 
     // 3 requests in the same time window -> allowed
     Assertions.assertThat(rateLimiter.isAllowed("1.1.1.1")).isTrue();
@@ -93,7 +74,7 @@ class FastLeakyBucketRateLimiterTest {
   void concurrentAccess_multipleIps_shouldRespectLimitPerWindow() throws InterruptedException {
     // Multiple threads issue requests to different identifiers (IP/client-id).
     // Ensures each identifier respects its own limit.
-    rateLimiter = new FastLeakyBucketRateLimiter(100, 10, fakeTime::get);
+    rateLimiter = new FixedWindowRateLimiter(100, 10, fakeTime::get);
 
     int threadCount = 50;
     int requestsPerThread = 20;
@@ -132,7 +113,7 @@ class FastLeakyBucketRateLimiterTest {
   void highContention_sameIp_shouldNotExceedLimit() throws InterruptedException {
     // Multiple threads hammer the same identifier (IP/client-id).
     // Ensures that even under high contention, the limit is never exceeded.
-    rateLimiter = new FastLeakyBucketRateLimiter(100, 10, fakeTime::get);
+    rateLimiter = new FixedWindowRateLimiter(100, 10, fakeTime::get);
 
     int threadCount = 50;
     int requestsPerThread = 20;

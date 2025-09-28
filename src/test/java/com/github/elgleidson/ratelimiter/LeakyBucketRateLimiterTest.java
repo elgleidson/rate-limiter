@@ -1,4 +1,4 @@
-package com.github.elgleidson.dsa.ratelimit;
+package com.github.elgleidson.ratelimiter;
 
 import static org.assertj.core.api.Assertions.assertThat;
 

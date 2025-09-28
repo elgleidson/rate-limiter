@@ -1,44 +1,23 @@
-package com.github.elgleidson.dsa.ratelimit;
+package com.github.elgleidson.ratelimiter;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.LongSupplier;
 
-public class FastTokenBucketRateLimiter implements RateLimiter {
+public class TokenBucketRateLimiter implements RateLimiter {
 
-  // 100 requests / min => 100 / 60_000 ms
-  // Using floating points that will give us:
-  // - limitPerWindow = 100
-  // - refillRatePerMs = 0.00166667 tokens / ms
-  //
-  // After 100ms that gives us 0.166667 token.
-  // After 600ms that gives us 1 whole token.
-  //
-  // Using long scale to avoid floating point arithmetic that will give us:
-  // - limitPerWindow = 100_000_000 micro-tokens
-  // - refillRatePerMs = 1666 micro-tokens / ms, same as the first 6 decimal places of our floating point impl = 0.001666 * scale
-  //
-  // After 100ms that gives us 166_600 micro-tokens
-  // After 600ms that gives us 999_600 micro-tokens (a little less than 1 whole token)
-  // After 601ms that gives us 1_001_266 micro-tokens (a little more than 1 whole token)
-  //
-  // It's a trade-off:
-  // - Floating point is more precise, but more costly, and we can have rounding issues.
-  // - Long scale is faster, no rounding issues, but it's not as precise. Increasing scale could lead to math overflow.
-  private static final int SCALE = 1_000_000;
-
-  private final long limitPerWindow; // in micro-tokens
-  private final long refillRatePerMs; // in micro-tokens
+  private final int limitPerWindow;
+  private final double refillRatePerMs;
   private final Map<String, Hits> requests;
   private final LongSupplier currentTimeInMsSupplier;
 
-  public FastTokenBucketRateLimiter(long windowSizeInMs, int limitPerWindow) {
+  public TokenBucketRateLimiter(long windowSizeInMs, int limitPerWindow) {
     this(windowSizeInMs, limitPerWindow, System::currentTimeMillis);
   }
 
-  FastTokenBucketRateLimiter(long windowSizeInMs, int limitPerWindow, LongSupplier currentTimeInMsSupplier) {
-    this.limitPerWindow = limitPerWindow * SCALE;
-    this.refillRatePerMs = this.limitPerWindow / windowSizeInMs;
+  TokenBucketRateLimiter(long windowSizeInMs, int limitPerWindow, LongSupplier currentTimeInMsSupplier) {
+    this.limitPerWindow = limitPerWindow;
+    this.refillRatePerMs = (double) limitPerWindow / windowSizeInMs;
     this.requests = new ConcurrentHashMap<>();
     this.currentTimeInMsSupplier = currentTimeInMsSupplier;
   }
@@ -73,23 +52,31 @@ public class FastTokenBucketRateLimiter implements RateLimiter {
   private static class Hits {
 
     private long lastRefillTimestamp;
-    private long tokens;
+    private int tokens;
+    private double remainder;
 
-    Hits(long lastRefillTimestamp, long tokens) {
+    Hits(long lastRefillTimestamp, int tokens) {
       this.lastRefillTimestamp = lastRefillTimestamp;
       this.tokens = tokens;
+      this.remainder = 0;
     }
 
-    void refill(long now, long limitPerWindow, long refillRatePerMs) {
+    void refill(long now, int limitPerWindow, double refillRatePerMs) {
       long elapsedTimeInMs = now - lastRefillTimestamp;
       lastRefillTimestamp = now;
-      long newTokens = elapsedTimeInMs * refillRatePerMs;
-      tokens = Math.min(limitPerWindow, tokens + newTokens);
+      double newTokens = remainder + (elapsedTimeInMs * refillRatePerMs);
+      int wholeTokens = (int) newTokens;
+      if (wholeTokens > 0) {
+        tokens = Math.min(limitPerWindow, tokens + wholeTokens);
+        remainder = wholeTokens - newTokens;
+      } else {
+        remainder = newTokens;
+      }
     }
 
     boolean tryConsume() {
-      if (tokens >= SCALE) {
-        tokens -= SCALE;
+      if (tokens > 0) {
+        tokens--;
         return true;
       }
       return false;
